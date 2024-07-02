@@ -11,89 +11,60 @@ class Checkout
   ].freeze
 
   CURRENCY = '£'
-  DISCOUNT = 10
 
-  Product = Struct.new(:code, :name, :price, :quantity, :total_price)
-  Rule = Struct.new(:code, :strategy)
+  Product = Struct.new(:code, :name, :price, :quantity, :total_price, :min_quantity, :discount, keyword_init: true)
+  Rule = Struct.new(:min_quantity, :discount, :codes, keyword_init: true)
 
   def initialize(pricing_rules)
-    raise 'Invalid strategy name!' if invalid_strategy?(pricing_rules)
-
-    @pricing_rules = pricing_rules.map { |pr| Rule.new(**pr) }
+    @pricing_rules = pricing_rules.map { |pr| Rule.new(pr) }
+    assign_rules_to_products
   end
 
   def scan(item)
-    return 'Invalid item!' if invalid_item?(item)
+    return 'Invalid item!' if item.to_s.empty?
 
-    target = products.select { |p| p[:code] == item[:code] }.first
-    target ? (target[:quantity] += 1) : "Product with the code #{item[:code]} is out of stock"
+    product = products.find { |p| p.code == item }
+    product ? (product.quantity += 1) : "Product with the code #{item} is out of stock"
   end
 
   def total
-    amount = [buy_one_get_one_free_total, discount_after_third_total, full_price_total].map do |el|
-      el.sum { |h| h[:total_price] }
-    end.sum
-    "#{CURRENCY}#{amount}"
+    calculate_products_total
+    amount = products.sum(&:total_price)
+    CURRENCY << amount.to_s
   end
 
   private
 
-  def invalid_strategy?(pricing_rules)
-    current_strategies = pricing_rules.keys.uniq
-    !current_strategies.empty? && (current_strategies - %w[buy_one_get_one_free discount_after_third]).empty?
-  end
-
-  def invalid_item?(item)
-    !item.is_a?(Hash) || item[:code].nil?
-  end
-
   def products
     @products ||= PRODUCTS.map do |p|
-      Product.new(*p.merge(quantity: 0, total_price: 0).values)
+      Product.new(p.merge(quantity: 0, total_price: 0, min_quantity: 0, discount: 0))
     end
   end
 
-  def buy_one_get_one_free_total
-    target_products(:buy_one_get_one_free).each do |product|
-      quantity = product[:quantity]
-      next if quantity.zero?
-
-      product[:total_price] = if quantity <= 2
-                                product[:price]
-                              else
-                                [(quantity / 2), (quantity % 2)].sum * product[:price]
-                              end
+  def assign_rules_to_products
+    pricing_rules.each do |pricing_rule|
+      pricing_rule.codes.each do |code|
+        product = products.find { |p| p.code == code }
+        product.min_quantity = pricing_rule.min_quantity
+        product.discount = pricing_rule.discount
+      end
     end
   end
 
-  def discount_after_third_total
-    target_products(:discount_after_third).each do |product|
-      quantity = product[:quantity]
-      next if quantity.zero?
+  def calculate_products_total
+    products.each do |product|
+      next if product.quantity.zero?
 
-      regular_price = (quantity * product[:price]).to_f
-      product[:total_price] = if quantity < 3
-                                regular_price
-                              else
-                                regular_price - (regular_price * DISCOUNT / 100)
-                              end
+      full_price = (product.quantity * product.price)
+      product.total_price = if no_discount?(product)
+                              full_price
+                            else
+                              full_price - (full_price * product.discount / 100)
+                            end
     end
   end
 
-  def full_price_total
-    target_products.each do |product|
-      quantity = product[:quantity]
-      next if quantity.zero?
-
-      product[:total_price] = (quantity * product[:price]).to_f
-    end
-  end
-
-  def target_products(strategy = nil)
-    if strategy
-      products.select { |p| p[:code] == pricing_rules[strategy] }
-    else
-      products - target_products(:buy_one_get_one_free) - target_products(:discount_after_third)
-    end
+  def no_discount?(product)
+    !product.discount.zero? || product.quantity < product.min_quantity
   end
 end
