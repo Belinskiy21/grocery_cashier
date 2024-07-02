@@ -17,7 +17,7 @@ class Checkout
 
   def initialize(pricing_rules)
     @pricing_rules = pricing_rules.map { |pr| Rule.new(pr) }
-    assign_rules_to_products
+    assign_discounts_to_products
   end
 
   def scan(item)
@@ -41,7 +41,7 @@ class Checkout
     end
   end
 
-  def assign_rules_to_products
+  def assign_discounts_to_products
     pricing_rules.each do |pricing_rule|
       pricing_rule.codes.each do |code|
         product = products.find { |p| p.code == code }
