@@ -14,27 +14,32 @@ class Checkout
 
   Product = Struct.new(:code, :name, :price, :quantity, :total_price, :min_quantity, :discount, keyword_init: true)
   Rule = Struct.new(:min_quantity, :discount, :codes, keyword_init: true) do |_params|
-    def initialize(*args)
-      raise "params are required [:min_quantity, :discount, :codes] - #{args}}" unless args.length == 3
+    def initialize(args)
+      raise ArgumentError, "params are required #{%i[min_quantity discount codes] - args.keys}}" unless args.size == 3
+
+      super
     end
   end
 
   def initialize(pricing_rules)
-    @pricing_rules = pricing_rules.map { |pr| Rule.new(pr) }
+    raise ArgumentError if invalid_args?(pricing_rules)
+
+    @pricing_rules = pricing_rules.map { |pr| Rule.new(**pr) }
     assign_discounts_to_products
   end
 
   def scan(item)
-    return 'Invalid item!' if item.to_s.empty?
+    raise ArgumentError if invalid_args?(item)
 
     product = products.find { |p| p.code == item }
     product ? (product.quantity += 1) : "Product with the code #{item} is out of stock"
   end
 
   def total
+    check_fifty_percent_products
     calculate_products_total
-    amount = products.sum(&:total_price)
-    CURRENCY << amount.to_s
+    amount = products.sum(&:total_price).round(2)
+    "#{CURRENCY}#{amount}"
   end
 
   private
@@ -55,8 +60,16 @@ class Checkout
     end
   end
 
+  def check_fifty_percent_products
+    products.select { |p| p.discount == 50 }.each do |product|
+      next if product.quantity.zero?
+
+      product.quantity = product.quantity.even? ? product.quantity : product.quantity + 1
+    end
+  end
+
   def calculate_products_total
-    products.each do |product|
+    products.map do |product|
       next if product.quantity.zero?
 
       full_amount = (product.quantity * product.price)
@@ -69,6 +82,10 @@ class Checkout
   end
 
   def no_discount?(product)
-    !product.discount.zero? || product.quantity < product.min_quantity
+    product.discount.zero? || product.quantity < product.min_quantity
+  end
+
+  def invalid_args?(arg)
+    arg.nil? || arg.empty? || arg.respond_to?(:map) && arg.map(&:empty?).any?
   end
 end
