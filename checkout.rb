@@ -13,7 +13,11 @@ class Checkout
   CURRENCY = '£'
 
   Product = Struct.new(:code, :name, :price, :quantity, :total_price, :min_quantity, :discount, keyword_init: true)
-  Rule = Struct.new(:min_quantity, :discount, :codes, keyword_init: true)
+  Rule = Struct.new(:min_quantity, :discount, :codes, keyword_init: true) do |_params|
+    def initialize(*args)
+      raise "params are required [:min_quantity, :discount, :codes] - #{args}}" unless args.length == 3
+    end
+  end
 
   def initialize(pricing_rules)
     @pricing_rules = pricing_rules.map { |pr| Rule.new(pr) }
@@ -55,11 +59,11 @@ class Checkout
     products.each do |product|
       next if product.quantity.zero?
 
-      full_price = (product.quantity * product.price)
+      full_amount = (product.quantity * product.price)
       product.total_price = if no_discount?(product)
-                              full_price
+                              full_amount
                             else
-                              full_price - (full_price * product.discount / 100)
+                              full_amount - (full_amount * product.discount / 100)
                             end
     end
   end
